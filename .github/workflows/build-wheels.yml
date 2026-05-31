@@ -1,3 +1,4 @@
+
 name: build - check - upload
 
 on:
@@ -9,7 +10,6 @@ on:
   pull_request:
     branches:
     - '**'
-
   workflow_dispatch:
     inputs:
       poc_note:
@@ -18,7 +18,7 @@ on:
         default: 'CVE candidate: setjobenv@main supply chain PoC'
 
 concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_lived/')) && github.sha || '' }}
+  group: ${{ github.ref }}-${{ github.workflow }}-${{ github.event_name }}-${{ (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/heads/long_ived/')) && github.sha || '' }}
   cancel-in-progress: true
 
 permissions:
@@ -26,294 +26,124 @@ permissions:
   id-token: write
 
 jobs:
+  ## ----------------------------------------------------------
+  ## build-wheels — stripped to single job, no heavy build
+  ## Only purpose here is to satisfy artifact expectations
+  ## ----------------------------------------------------------
   build-wheels:
-    name: Wheel - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
+    name: Wheel - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
     continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: macOS
-            matrix: macos
-            runs-on:
-              arm: macos-15
-              intel: macos-15-intel
-            cibw-archs-macos:
-              arm: arm64
-              intel: x86_64
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: ubuntu-24.04-arm
-              intel: ubuntu-latest
-          - name: Windows
-            matrix: windows
-            runs-on:
-              intel: windows-latest
-        python:
-          - major-dot-minor: '3.10'
-            cibw-build: 'cp310-*'
-            manylinux: manylinux_2_28
-            matrix: '3.10'
-            cibuildwheel: 'cibuildwheel==2.23.3'
-          - major-dot-minor: '3.11'
-            cibw-build: 'cp311-*'
-            manylinux: manylinux_2_28
-            matrix: '3.11'
-            cibuildwheel: 'cibuildwheel==3.2.1'
-          - major-dot-minor: '3.12'
-            cibw-build: 'cp312-*'
-            manylinux: manylinux_2_28
-            matrix: '3.12'
-            cibuildwheel: 'cibuildwheel==3.2.1'
-          - major-dot-minor: '3.13'
-            cibw-build: 'cp313-*'
-            manylinux: manylinux_2_28
-            matrix: '3.13'
-            cibuildwheel: 'cibuildwheel==3.2.1'
-          - major-dot-minor: '3.14'
-            cibw-build: 'cp314-*'
-            manylinux: manylinux_2_28
-            matrix: '3.14'
-            cibuildwheel: 'cibuildwheel==3.2.1'
-        arch:
-          - name: ARM
-            matrix: arm
-          - name: Intel
-            matrix: intel
-        exclude:
-          - os:
-              name: Windows
-              matrix: windows
-              runs-on:
-                intel: windows-latest
-            arch:
-              name: ARM
-              matrix: arm
-
     steps:
-    - name: Clean workspace
-      uses: Chia-Network/actions/clean-workspace@main
-
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
-
-    - name: Set Env
-      if: env.RUNNER_ARCH != 'ARM64'
-      uses: Chia-Network/actions/setjobenv@main
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - uses: Chia-Network/actions/setup-python@main
-      with:
-        python-version: ${{ matrix.python.major-dot-minor }}
-
-    - name: Install pipx
+    - name: Create dummy artifact (PoC — no real build)
       run: |
-        pip install pipx
-
-    - name: Get Windows Bladebit Harvester Artifact
-      if: runner.os == 'Windows'
-      shell: bash
-      run: |
-        set -eo pipefail
-        set -x
-        .github/actions/fetch_bladebit_harvester.sh windows x86-64
-
-    - name: Build and test
-      env:
-        CIBW_PRERELEASE_PYTHONS: True
-        CIBW_BUILD: ${{ matrix.python.cibw-build }}
-        CIBW_MANYLINUX_AARCH64_IMAGE: ${{ matrix.python.manylinux }}
-        CIBW_MANYLINUX_X86_64_IMAGE: ${{ matrix.python.manylinux }}
-        CIBW_ARCHS_MACOS: ${{ matrix.os.cibw-archs-macos[matrix.arch.matrix] }}
-      run:
-        pipx run --spec=${{ matrix.python.cibuildwheel }} cibuildwheel --output-dir dist 2>&1
-
+        mkdir -p dist
+        echo "poc-placeholder" > dist/chiapos-0.0.0-poc.whl
     - name: Upload artifacts
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v4
       with:
-        name: packages-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}-${{ matrix.arch.name }}
+        name: packages-Ubuntu-3.12-Intel
         path: ./dist
 
-
+  ## ----------------------------------------------------------
+  ## build-sdist — no-op, just satisfies needs: if restored
+  ## ----------------------------------------------------------
   build-sdist:
-    name: sdist - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: ubuntu-24.04-arm
-              intel: ubuntu-latest
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
-
+    name: sdist - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
     steps:
-    - name: Clean workspace
-      uses: Chia-Network/actions/clean-workspace@main
-
     - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
-
-    - uses: Chia-Network/actions/setup-python@main
-      with:
-        python-version: ${{ matrix.python.major-dot-minor }}
-
-    - name: Build source distribution
+      uses: actions/checkout@v4
+    - name: Create dummy sdist (PoC)
       run: |
-        pip install build
-        python -m build --sdist --outdir dist .
-
+        mkdir -p dist
+        echo "poc-sdist-placeholder" > dist/chiapos-0.0.0.tar.gz
     - name: Upload artifacts
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v4
       with:
-        name: packages-sdist-${{ matrix.os.name }}-${{ matrix.python.major-dot-minor }}-${{ matrix.arch.name }}
+        name: packages-sdist-Ubuntu-3.12-Intel
         path: ./dist
 
-  
+  ## ----------------------------------------------------------
+  ## check — no-op, just satisfies needs: if restored
+  ## ----------------------------------------------------------
   check:
-    name: Check - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: ubuntu-24.04-arm
-              intel: ubuntu-latest
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
-
+    name: Check - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
     steps:
-    - name: Clean workspace
-      uses: Chia-Network/actions/clean-workspace@main
-
     - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        fetch-depth: 0
+      uses: actions/checkout@v4
+    - name: PoC check placeholder
+      run: echo "check step — no-op for PoC"
 
-    - uses: Chia-Network/actions/setup-python@main
-      with:
-        python-version: ${{ matrix.python.major-dot-minor }}
-
-    - name: flake8
-      run: |
-        pip install flake8
-        flake8 tests setup.py
-
-    - name: mypy
-      run: |
-        pip install mypy
-        mypy --config-file mypi.ini setup.py tests
-
- 
-
-  ## with local evil-setjobenv to demonstrate the attack path.
- 
+  ## ----------------------------------------------------------
+  ## upload — POC MODIFIED
+  ## needs: REMOVED so this runs immediately on workflow_dispatch
+  ## setjobenv@main replaced with evil-setjobenv
+  ## ----------------------------------------------------------
   upload:
-    name: Upload to PyPI - ${{ matrix.os.name }} ${{ matrix.python.major-dot-minor }} ${{ matrix.arch.name }}
-    runs-on: ${{ matrix.os.runs-on[matrix.arch.matrix] }}
-    needs:
-      - build-wheels
-      - build-sdist
-      - check
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - name: Ubuntu
-            matrix: ubuntu
-            runs-on:
-              arm: ubuntu-24.04-arm
-              intel: ubuntu-latest
-        python:
-          - major-dot-minor: '3.12'
-            matrix: '3.12'
-        arch:
-          - name: Intel
-            matrix: intel
+    name: Upload to PyPI - Ubuntu 3.12 Intel
+    runs-on: ubuntu-latest
+    ## needs: block intentionally removed for PoC speed
+    ## In production this is: needs: [build-wheels, build-sdist, check]
 
     steps:
-    - name: Clean workspace
-      uses: Chia-Network/actions/clean-workspace@main
-
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
 
     ## --------------------------------------------------------
     ## POC SUBSTITUTION
-    ## Original line:
+    ## Original vulnerable line:
     ##   uses: Chia-Network/actions/setjobenv@main
     ##   env:
     ##     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     ##
-    ## Replaced with local action that simulates a compromised
-    ## setjobenv@main. Demonstrates token accessibility and
-    ## OIDC minting capability at this execution position.
+    ## A compromised setjobenv@main would execute here with full
+    ## access to GITHUB_TOKEN and the OIDC token endpoint,
+    ## immediately before pypa/gh-action-pypi-publish runs.
     ## --------------------------------------------------------
     - name: Set Env (POC - simulates compromised setjobenv@main)
       uses: ./.github/actions/evil-setjobenv
       with:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    ## condition passes and we can confirm execution reaches it.
-    ## In a real attack this env var is set by setjobenv itself.
+    ## Force RELEASE=true — in production setjobenv sets this
+    ## based on the git ref being a release tag
     - name: '[PoC] Force RELEASE env to reach publish step'
       shell: bash
       run: |
         echo "RELEASE=true" >> $GITHUB_ENV
         echo "PRE_RELEASE=false" >> $GITHUB_ENV
-        echo "[PoC] RELEASE forced to true — publish step condition will pass"
-
-    - uses: Chia-Network/actions/setup-python@main
-      with:
-        python-version: ${{ matrix.python.major-dot-minor }}
+        echo "[PoC] RELEASE=true forced — publish step condition will pass"
+        echo "[PoC] In production, setjobenv@main sets this based on release tag"
 
     - name: Download artifacts
-      uses: actions/download-artifact@v8
+      uses: actions/download-artifact@v4
       with:
         merge-multiple: true
         pattern: packages-*
         path: ./dist
+      continue-on-error: true
 
-    ## This step will be reached (RELEASE=true) but will FAIL because
+    - name: '[PoC] Show dist contents before publish'
+      run: |
+        echo "=== dist/ contents staged for PyPI publish ==="
+        ls -la ./dist/ 2>/dev/null || echo "(empty — build-wheels skipped)"
+        echo "=== In a real attack, malicious wheels would be injected here ==="
+
+    ## This step is reached (RELEASE=true) but FAILS because
     ## this fork has no trusted publisher configured with PyPI.
-    ## That failure is expected — it proves the publish step is reachable
-    ## from the compromised action position. The PoC is complete before
-    ## this step runs.
+    ## Expected failure — proves the publish step is reachable
+    ## from the compromised setjobenv position.
     - name: Publish distribution to PyPI
       if: env.RELEASE == 'true'
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
-        packages-dir: dist/
-        skip-existing: true
-
-    - name: Publish distribution to Test PyPI
-      if: env.PRE_RELEASE == 'true'
-      uses: pypa/gh-action-pypi-publish@release/v1
-      with:
-        repository-url: https://test.pypi.org/legacy/
         packages-dir: dist/
         skip-existing: true
